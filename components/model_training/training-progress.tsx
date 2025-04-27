@@ -57,7 +57,6 @@ export function TrainingProgress({
   const [progress, setProgress] = useState(0);
   const [currentModel, setCurrentModel] = useState("Preparing data...");
   const [timeRemaining, setTimeRemaining] = useState(0);
-  const [error, setError] = useState<string | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const [trainingComplete, setTrainingComplete] = useState(false);
@@ -320,7 +319,6 @@ export function TrainingProgress({
       setProgress(0);
       setCurrentModel("Preparing data...");
       setTimeRemaining(0);
-      setError(null);
     }
   }, [isTraining]);
 
