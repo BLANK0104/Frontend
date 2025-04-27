@@ -1,285 +1,72 @@
-"use client";
+// pages/model_training.tsx (or model_training.jsx if you're using JavaScript)
 
-import { useState, useEffect, useRef } from "react";
-import { Progress } from "@/components/ui/progress";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Loader2, Clock, AlertCircle, Play } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { fetchModelResults } from "@/lib/api";
+import React, { useState, useRef, useEffect } from 'react';
+import * as ProgressPrimitive from '@radix-ui/react-progress';
 
-interface StepDetails {
-  [key: string]: any;
-}
-
-interface TrainingStep {
-  id: number;
-  name: string;
-  status: "pending" | "processing" | "completed" | "error";
-  details: StepDetails;
-}
-
-interface TrainingProgressProps {
-  startTraining: () => Promise<void>;
-  isTraining: boolean;
-  onTrainingComplete: () => Promise<void>;
-  datasetId: number | null;
-  datasetName: string | null;
-}
-
-export function TrainingProgress({
-  startTraining,
-  isTraining,
-  onTrainingComplete,
-  datasetId,
-  datasetName,
-}: TrainingProgressProps) {
+const ModelTraining = () => {
   const [progress, setProgress] = useState(0);
-  const [currentModel, setCurrentModel] = useState("Preparing data...");
-  const [timeRemaining, setTimeRemaining] = useState(0);
-  const [log, setLog] = useState<string[]>([]);
-  const [connected, setConnected] = useState(false);
-  const [trainingComplete, setTrainingComplete] = useState(false);
-  const [steps, setSteps] = useState<{ [key: number]: TrainingStep }>({});
-  const [isDownloading, setIsDownloading] = useState(false);
-
-  const [localDatasetId, setLocalDatasetId] = useState<number | null>(null);
-  const [localDatasetName, setLocalDatasetName] = useState<string | null>(null);
-
-  const logContainerRef = useRef<HTMLDivElement>(null);
-
-  const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/").replace(/\/?$/, "/");
-
-  const Spinner = ({ className = "" }) => (
-    <div
-      className={`inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-current border-r-transparent ${className}`}
-    ></div>
-  );
-
-  // Load dataset info safely on client side
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const storedData = localStorage.getItem("selectedDataset");
-      if (storedData) {
-        try {
-          const data = JSON.parse(storedData);
-          setLocalDatasetId(data.id ?? null);
-          setLocalDatasetName(data.name ?? null);
-          console.log("Dataset ID:", data.id);
-        } catch (error) {
-          console.error("Error parsing dataset from localStorage:", error);
-        }
-      }
-    }
-  }, []);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    const loadData = async () => {
-      console.log("Fetching model results...");
-      const data = await fetchModelResults();
-      if (data.length !== 0) {
-        setTrainingComplete(true);
-      }
-    };
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    if (logContainerRef.current) {
-      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-    }
-  }, [log]);
-
-  const models = [
-    "Preparing data...",
-    "Ridge",
-    "Lasso",
-    "ElasticNet",
-    "RandomForest",
-    "GradientBoosting",
-    "LogisticRegression",
-    "XGBoost",
-    "LightGBM",
-    "CatBoost",
-    "SVM",
-    "SVR",
-    "KNN",
-    "DecisionTree",
-    "NaiveBayes",
-    "MLP",
-    "ExtraTrees",
-    "AdaBoost",
-    "SGDRegressor",
-    "Finalizing results...",
-  ];
-
-  const addLog = (message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setLog((prev) => [...prev, `[${timestamp}] ${message}`]);
-    console.log(`[${timestamp}] ${message}`);
-  };
-
-  const downloadModel = async () => {
-    try {
-      setIsDownloading(true);
-      addLog(`Initiating download for model: ${localDatasetId}`);
-
-      if (!localDatasetId) {
-        throw new Error("Model ID is required for download");
-      }
-
-      const downloadUrl = `${API}api/download-model/${localDatasetId}/`;
-
-      const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.setAttribute("download", `model-${localDatasetId}.pkl`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      addLog(`Download started for model: ${localDatasetId}`);
-      return true;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      console.error("Error downloading model:", error);
-      addLog(`Error downloading model: ${errorMessage}`);
-      return false;
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!isTraining) return;
-
-    console.log("Setting up SSE stream");
-    let eventSource: EventSource | null = null;
-    let retryCount = 0;
-    const maxRetries = 10;
-    const baseRetryDelay = 1000;
-
-    const connectSSE = () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-
-      eventSource = new EventSource(`${API}api/stream/`);
-
-      eventSource.onopen = () => {
-        setConnected(true);
-        retryCount = 0;
-        addLog("Connected to SSE stream");
-      };
-
-      eventSource.onerror = () => {
-        if (eventSource) {
-          eventSource.close();
-        }
-        setConnected(false);
-
-        if (retryCount < maxRetries) {
-          retryCount++;
-          const delay = Math.min(30000, baseRetryDelay * Math.pow(2, retryCount));
-          addLog(`SSE connection error. Retrying in ${delay / 1000}s (${retryCount}/${maxRetries})`);
-          setTimeout(connectSSE, delay);
-        } else {
-          addLog("Maximum retry attempts reached. Please refresh the page.");
-        }
-      };
-
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data) as TrainingStep;
-          setSteps((prev) => ({
-            ...prev,
-            [data.id]: data,
-          }));
-
-          const statusEmoji =
-            data.status === "completed"
-              ? "✅"
-              : data.status === "processing"
-              ? "⏳"
-              : data.status === "error"
-              ? "❌"
-              : "⏺️";
-          addLog(`${statusEmoji} ${data.name}: ${data.status}`);
-        } catch (error) {
-          console.error("Error parsing SSE message:", error);
-        }
-      };
-    };
-
-    connectSSE();
-
+    // Cleanup timer when component unmounts
     return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isTraining]);
+  }, []);
+
+  const startTraining = () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+
+    setProgress(0);
+    intervalRef.current = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 100) {
+          if (intervalRef.current) clearInterval(intervalRef.current);
+          return 100;
+        }
+        return prev + 10;
+      });
+    }, 500);
+  };
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Training Progress</CardTitle>
-          <CardDescription>
-            {localDatasetName ? `Dataset: ${localDatasetName}` : "Loading dataset..."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Progress value={progress} />
-          <div>Current Model: {currentModel}</div>
-          <div>Time Remaining: {timeRemaining} seconds</div>
-          <div>
-            Connection Status:{" "}
-            {connected ? (
-              <span className="text-green-500">Connected</span>
-            ) : (
-              <span className="text-red-500">Disconnected</span>
-            )}
-          </div>
-          {trainingComplete && (
-            <Button onClick={downloadModel} disabled={isDownloading}>
-              {isDownloading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Downloading...
-                </>
-              ) : (
-                <>
-                  <Play className="mr-2 h-4 w-4" />
-                  Download Model
-                </>
-              )}
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
+      <h1 className="text-3xl font-bold mb-6">Model Training</h1>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Logs</CardTitle>
-          <CardDescription>Real-time updates of training steps</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div
-            ref={logContainerRef}
-            className="h-64 overflow-y-auto bg-gray-100 p-4 rounded"
-          >
-            {log.map((entry, idx) => (
-              <div key={idx}>{entry}</div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <button
+        onClick={startTraining}
+        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+      >
+        Start Training
+      </button>
+
+      <div className="w-full max-w-md mt-10">
+        <ProgressPrimitive.Root
+          value={progress}
+          max={100}
+          className="relative overflow-hidden bg-gray-200 rounded-full h-6 mt-4"
+        >
+          <ProgressPrimitive.Indicator
+            style={{ width: `${progress}%` }}
+            className="bg-blue-500 h-full transition-all duration-300 ease-in-out"
+          />
+        </ProgressPrimitive.Root>
+        <p className="text-center mt-4 font-semibold text-gray-700">{progress}% Completed</p>
+      </div>
+
+      <p className="text-gray-500 text-xs mt-8">
+        Learn more about{' '}
+        <a
+          href="https://radix-ui.com/primitives/docs/components/progress"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline hover:text-blue-600"
+        >
+          Radix Progress
+        </a>
+      </p>
     </div>
   );
-}
+};
+
+export default ModelTraining;
