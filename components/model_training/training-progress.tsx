@@ -405,13 +405,6 @@ export function TrainingProgress({
             </div>
           )}
 
-          {error && (
-            <div className="flex items-center text-sm text-destructive">
-              <AlertCircle className="h-4 w-4 mr-2" />
-              {error}
-            </div>
-          )}
-
           {log.length > 0 && (
             <div 
               ref={logContainerRef}
