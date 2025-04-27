@@ -11,22 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Loader2, Clock, AlertCircle, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { list } from "postcss";
 import { fetchModelResults } from "@/lib/api";
-
-let id: number | null = null;
-let name: string | null = null;
-const storedData = localStorage.getItem("selectedDataset");
-if (storedData) {
-  try {
-    const data = JSON.parse(storedData);
-    id = data.id;
-    name = data.name;
-    console.log("Dataset ID:", data.id);
-  } catch (error) {
-    console.error("Error parsing dataset from localStorage:", error);
-  }
-}
 
 interface StepDetails {
   [key: string]: any;
@@ -62,19 +47,37 @@ export function TrainingProgress({
   const [trainingComplete, setTrainingComplete] = useState(false);
   const [steps, setSteps] = useState<{ [key: number]: TrainingStep }>({});
   const [isDownloading, setIsDownloading] = useState(false);
-  
-  // Reference to the log container div for auto-scrolling
+
+  const [localDatasetId, setLocalDatasetId] = useState<number | null>(null);
+  const [localDatasetName, setLocalDatasetName] = useState<string | null>(null);
+
   const logContainerRef = useRef<HTMLDivElement>(null);
 
-  // Make sure the API URL has the correct format
-  const API = (
-    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/"
-  ).replace(/\/?$/, "/");
+  const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/").replace(/\/?$/, "/");
+
   const Spinner = ({ className = "" }) => (
     <div
       className={`inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-current border-r-transparent ${className}`}
     ></div>
   );
+
+  // Load dataset info safely on client side
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const storedData = localStorage.getItem("selectedDataset");
+      if (storedData) {
+        try {
+          const data = JSON.parse(storedData);
+          setLocalDatasetId(data.id ?? null);
+          setLocalDatasetName(data.name ?? null);
+          console.log("Dataset ID:", data.id);
+        } catch (error) {
+          console.error("Error parsing dataset from localStorage:", error);
+        }
+      }
+    }
+  }, []);
+
   useEffect(() => {
     const loadData = async () => {
       console.log("Fetching model results...");
@@ -83,98 +86,85 @@ export function TrainingProgress({
         setTrainingComplete(true);
       }
     };
-
     loadData();
   }, []);
 
-  // Auto-scroll to bottom when log changes
   useEffect(() => {
     if (logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [log]);
 
-  // Models to simulate training
   const models = [
     "Preparing data...",
-    'Ridge',
-    'Lasso',
-    'ElasticNet', 
-    'RandomForest', 
-    'GradientBoosting', 
-    'LogisticRegression', 
-    'XGBoost', 
-    'LightGBM', 
-    'CatBoost', 
-    'SVM', 
-    'SVR', 
-    'KNN', 
-    'DecisionTree', 
-    'NaiveBayes', 
-    'MLP', 
-    'ExtraTrees', 
-    'AdaBoost', 
-    'SGDRegressor',
+    "Ridge",
+    "Lasso",
+    "ElasticNet",
+    "RandomForest",
+    "GradientBoosting",
+    "LogisticRegression",
+    "XGBoost",
+    "LightGBM",
+    "CatBoost",
+    "SVM",
+    "SVR",
+    "KNN",
+    "DecisionTree",
+    "NaiveBayes",
+    "MLP",
+    "ExtraTrees",
+    "AdaBoost",
+    "SGDRegressor",
     "Finalizing results...",
   ];
 
-  // Add to log function
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     setLog((prev) => [...prev, `[${timestamp}] ${message}`]);
-    console.log(`[${timestamp}] ${message}`); // Add console.log for debugging
+    console.log(`[${timestamp}] ${message}`);
   };
 
-  // Download trained model function
   const downloadModel = async () => {
     try {
-      // Show loading indicator or notification
       setIsDownloading(true);
-      addLog(`Initiating download for model: ${id}`);
+      addLog(`Initiating download for model: ${localDatasetId}`);
 
-      // Check if we have a valid model ID
-      if (!id) {
+      if (!localDatasetId) {
         throw new Error("Model ID is required for download");
       }
 
-      // Construct the download URL
-      const downloadUrl = `${API}api/download-model/${id}/`;
+      const downloadUrl = `${API}api/download-model/${localDatasetId}/`;
 
-      // For simplicity and better handling of large files, direct browser download:
       const link = document.createElement("a");
       link.href = downloadUrl;
-      link.setAttribute("download", `model-${id}.pkl`); // Default name, server will override
+      link.setAttribute("download", `model-${localDatasetId}.pkl`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      addLog(`Download started for model: ${id}`);
+      addLog(`Download started for model: ${localDatasetId}`);
       return true;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
       console.error("Error downloading model:", error);
       addLog(`Error downloading model: ${errorMessage}`);
-
       return false;
     } finally {
-      // Hide loading indicator
       setIsDownloading(false);
     }
   };
 
-  // Connect to SSE stream
   useEffect(() => {
     if (!isTraining) return;
 
-    console.log("Setting up SSE stream"); // Debug log
+    console.log("Setting up SSE stream");
     let eventSource: EventSource | null = null;
     let retryCount = 0;
     const maxRetries = 10;
-    const baseRetryDelay = 1000; // 1 second
+    const baseRetryDelay = 1000;
 
     const connectSSE = () => {
-      // Close any existing connection first
       if (eventSource) {
         eventSource.close();
       }
@@ -183,7 +173,7 @@ export function TrainingProgress({
 
       eventSource.onopen = () => {
         setConnected(true);
-        retryCount = 0; // Reset retry count on successful connection
+        retryCount = 0;
         addLog("Connected to SSE stream");
       };
 
@@ -195,16 +185,8 @@ export function TrainingProgress({
 
         if (retryCount < maxRetries) {
           retryCount++;
-          const delay = Math.min(
-            30000,
-            baseRetryDelay * Math.pow(2, retryCount)
-          ); // Exponential backoff
-          addLog(
-            `SSE connection error. Retrying in ${
-              delay / 1000
-            } seconds... (${retryCount}/${maxRetries})`
-          );
-
+          const delay = Math.min(30000, baseRetryDelay * Math.pow(2, retryCount));
+          addLog(`SSE connection error. Retrying in ${delay / 1000}s (${retryCount}/${maxRetries})`);
           setTimeout(connectSSE, delay);
         } else {
           addLog("Maximum retry attempts reached. Please refresh the page.");
@@ -214,13 +196,11 @@ export function TrainingProgress({
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data) as TrainingStep;
-
           setSteps((prev) => ({
             ...prev,
             [data.id]: data,
           }));
 
-          // Log the step change
           const statusEmoji =
             data.status === "completed"
               ? "✅"
@@ -228,200 +208,78 @@ export function TrainingProgress({
               ? "⏳"
               : data.status === "error"
               ? "❌"
-              : "⏱️";
-
-          addLog(
-            `${statusEmoji} Step ${data.id} (${data.name}): ${data.status}`
-          );
-
-          // Update progress based on steps
-          const stepProgress = (data.id / 9) * 100;
-          setProgress(stepProgress);
-
-          // Update current model based on the step
-          const modelIndex = Math.min(
-            Math.floor((stepProgress / 100) * models.length),
-            models.length - 1
-          );
-          setCurrentModel(models[modelIndex]);
-
-          // Update time remaining (a simple simulation)
-          const remainingPercentage = 1 - stepProgress / 100;
-          setTimeRemaining(Math.max(0, Math.round(300 * remainingPercentage))); // 300 seconds as example
-
-          // Log details if present
-          if (data.details && Object.keys(data.details).length > 0) {
-            const detailsStr = Object.entries(data.details)
-              .map(([key, value]) => `${key}: ${value}`)
-              .join(", ");
-
-            if (detailsStr) {
-              addLog(`   Details: ${detailsStr}`);
-            }
-          }
-
-          // Check if this is the final step and it's completed
-          if (data.id === 9 && data.status === "completed") {
-            setTrainingComplete(true);
-            onTrainingComplete(); // Call parent callback when training completes
-          }
+              : "⏺️";
+          addLog(`${statusEmoji} ${data.name}: ${data.status}`);
         } catch (error) {
-          addLog(
-            `Error parsing SSE data: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
+          console.error("Error parsing SSE message:", error);
         }
       };
     };
 
     connectSSE();
 
-    // Implement a periodic status checking mechanism if SSE disconnects
-    const statusCheckInterval = setInterval(() => {
-      if (isTraining && !connected && datasetId) {
-        // If we're training but not connected to SSE, fetch status another way
-        fetch(`${API}api/training-status/${datasetId}/`)
-          .then((response) => {
-            if (response.ok) return response.json();
-            throw new Error("Failed to fetch training status");
-          })
-          .then((data) => {
-            // Update local state with server state
-            if (data.steps) {
-              setSteps(data.steps);
-            }
-            if (data.completed) {
-              setTrainingComplete(data.completed);
-              onTrainingComplete();
-            }
-            addLog("Retrieved training status via fallback endpoint");
-          })
-          .catch((err) => {
-            console.error("Failed to check training status:", err);
-          });
-      }
-    }, 10000); // Check every 10 seconds
-
-    // Cleanup function
     return () => {
-      clearInterval(statusCheckInterval);
       if (eventSource) {
         eventSource.close();
-        addLog("Disconnected from SSE stream");
       }
     };
-  }, [datasetId, datasetName, isTraining, connected, API, onTrainingComplete]);
-
-  // Reset progress when training is started or stopped
-  useEffect(() => {
-    if (!isTraining) {
-      setProgress(0);
-      setCurrentModel("Preparing data...");
-      setTimeRemaining(0);
-    }
   }, [isTraining]);
 
-  // Format time remaining
-  const formatTimeRemaining = (seconds: number) => {
-    if (seconds < 60) return `${seconds} seconds`;
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}m ${remainingSeconds}s`;
-  };
-
   return (
-    <Card className="mb-6">
-      <CardHeader className="pb-3">
-        <div className="flex justify-between items-center">
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Training Progress</CardTitle>
+          <CardDescription>
+            {localDatasetName ? `Dataset: ${localDatasetName}` : "Loading dataset..."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Progress value={progress} />
+          <div>Current Model: {currentModel}</div>
+          <div>Time Remaining: {timeRemaining} seconds</div>
           <div>
-            <CardTitle className="text-lg flex items-center">
-              {isTraining ? (
-                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-              ) : (
-                <Play className="h-5 w-5 mr-2" />
-              )}
-              {isTraining ? "Training Models" : "Model Training"}
-            </CardTitle>
-            <CardDescription>
-              {isTraining
-                ? `Currently training: ${currentModel}`
-                : "Start training to build your model"}
-            </CardDescription>
-          </div>
-          <div className="flex items-center text-sm text-muted-foreground">
-            {isTraining && timeRemaining > 0 ? (
-              <div className="flex items-center">
-                <Clock className="h-4 w-4 mr-1" />
-                <span>
-                  Estimated time remaining: {formatTimeRemaining(timeRemaining)}
-                </span>
-              </div>
-            ) : isTraining ? (
-              <div className="flex items-center">
-                <Clock className="h-4 w-4 mr-1" />
-                <span>Finalizing results...</span>
-              </div>
+            Connection Status:{" "}
+            {connected ? (
+              <span className="text-green-500">Connected</span>
             ) : (
-              <div className="flex items-center">
-                <span>Dataset: {datasetName || "None selected"}</span>
-              </div>
+              <span className="text-red-500">Disconnected</span>
             )}
           </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {isTraining ? (
-            <Progress value={progress} className="h-2" />
-          ) : (
-            <div className="flex justify-between gap-4">
-              <Button
-                variant="default"
-                onClick={startTraining}
-                disabled={!datasetId}
-                className="flex-1"
-              >
-                Start Training
-              </Button>
-
-              {trainingComplete && (
-                <Button
-                  variant="outline"
-                  onClick={() => downloadModel()}
-                  disabled={isDownloading}
-                  className="flex-1"
-                >
-                  {isDownloading ? (
-                    <>
-                      <Spinner className="mr-2 h-4 w-4 animate-spin" />
-                      Downloading...
-                    </>
-                  ) : (
-                    "Download Trained Model"
-                  )}
-                </Button>
+          {trainingComplete && (
+            <Button onClick={downloadModel} disabled={isDownloading}>
+              {isDownloading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Downloading...
+                </>
+              ) : (
+                <>
+                  <Play className="mr-2 h-4 w-4" />
+                  Download Model
+                </>
               )}
-            </div>
+            </Button>
           )}
+        </CardContent>
+      </Card>
 
-          {log.length > 0 && (
-            <div 
-              ref={logContainerRef}
-              className="mt-4 border rounded-md p-3 bg-muted/50 h-32 overflow-y-auto"
-            >
-              <h4 className="text-sm font-medium mb-2">Training Log</h4>
-              <div className="space-y-1 text-xs font-mono">
-                {log.map((entry, index) => (
-                  <div key={index} className="text-muted-foreground">
-                    {entry}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Logs</CardTitle>
+          <CardDescription>Real-time updates of training steps</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div
+            ref={logContainerRef}
+            className="h-64 overflow-y-auto bg-gray-100 p-4 rounded"
+          >
+            {log.map((entry, idx) => (
+              <div key={idx}>{entry}</div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
